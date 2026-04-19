@@ -1,0 +1,25 @@
+node_modules/
+dist/
+coverage/
+
+# Environment & secrets
+.env
+.env.local
+*.key
+*.pem
+*.p12
+*.pfx
+certs/
+
+# Token store (contains live OAuth tokens)
+.tokens.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user

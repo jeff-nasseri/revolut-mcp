@@ -1,0 +1,28 @@
+mode: Mainline
+branches:
+  main:
+    regex: ^main$
+    increment: Patch
+    prevent-increment-of-merged-branch-version: false
+  feature:
+    regex: ^feature[/-]
+    increment: Minor
+    source-branches: ["main"]
+  fix:
+    regex: ^fix[/-]
+    increment: Patch
+    source-branches: ["main"]
+  release:
+    regex: ^release[/-]
+    increment: None
+    source-branches: ["main"]
+  hotfix:
+    regex: ^hotfix[/-]
+    increment: Patch
+    source-branches: ["main"]
+major-version-bump-message: "^(feat|fix|refactor|perf)(\\(.+\\))?!:"
+minor-version-bump-message: "^feat(\\(.+\\))?:"
+patch-version-bump-message: "^(fix|refactor|perf)(\\(.+\\))?:"
+no-bump-message: "^(chore|docs|style|test|build|ci)(\\(.+\\))?:"
+tag-prefix: "v"
+commit-message-incrementing: Enabled
