@@ -1,0 +1,55 @@
+{
+  "name": "@jeffnasseri/revolut-mcp",
+  "version": "0.0.0",
+  "description": "MCP server for Revolut Personal (sandbox) — balances, transactions, and currency conversion",
+  "main": "dist/index.js",
+  "bin": {
+    "revolut-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "revolut",
+    "banking",
+    "open-banking",
+    "model-context-protocol"
+  ],
+  "author": "Jeff Nasseri",
+  "license": "MIT",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "jsonwebtoken": "^9.0.2",
+    "uuid": "^11.0.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.7",
+    "@types/uuid": "^10.0.0",
+    "jest": "^29.7.0",
+    "nock": "^14.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

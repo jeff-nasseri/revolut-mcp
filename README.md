@@ -1,155 +1,393 @@
-# Revolut MCP Server
+# revolut-mcp
 
-> ⚠️ **This project is currently under development and not ready for production use.**
+> **Sandbox only.** This MCP server connects to Revolut's Open Banking **sandbox** environment. Using it with a real Revolut account requires additional compliance registration — see [Production Use](#production-use).
 
-A Model Context Protocol (MCP) server implementation for Revolut Bank, enabling AI assistants like Claude to securely interact with Revolut's banking services.
+A [Model Context Protocol](https://modelcontextprotocol.io) server that lets AI assistants (Claude, Cursor, etc.) interact with Revolut Personal accounts. Query balances, browse transaction history, inspect individual transactions, and look up live currency exchange rates — all from a conversation.
 
-## Overview
+---
 
-This MCP server provides a standardized interface for AI applications to access Revolut banking functionality through the Model Context Protocol. It allows secure, programmatic access to account information, transaction history, and other banking operations.
+## Table of Contents
 
-## Features (Planned)
+1. [Features](#features)
+2. [Architecture](#architecture)
+3. [Prerequisites](#prerequisites)
+4. [Sandbox Setup](#sandbox-setup)
+5. [Installation](#installation)
+6. [Configuration](#configuration)
+7. [Running the Server](#running-the-server)
+8. [Authentication Flow](#authentication-flow)
+9. [Tools Reference](#tools-reference)
+10. [Connecting to Claude Desktop](#connecting-to-claude-desktop)
+11. [Development](#development)
+12. [Production Use](#production-use)
+13. [License](#license)
 
-- 🏦 Account balance and details retrieval
-- 💸 Transaction history and search
-- 👤 Profile and beneficiary management
-- 🔒 Secure authentication with Revolut API
-- 📊 Multi-currency account support
-- 🔔 Real-time notifications (webhooks)
+---
+
+## Features
+
+| Tool | Description |
+|---|---|
+| `setup_auth` | Step 1: Create consent & get the authorization URL |
+| `complete_auth` | Step 2: Exchange authorization code for tokens |
+| `get_accounts` | List all accounts with real-time balances |
+| `get_account_balance` | All balance types for a specific account |
+| `get_transactions` | Transaction history with optional date filtering |
+| `get_transaction_detail` | Full detail of a single transaction |
+| `get_exchange_rate` | Live / historical ECB exchange rates |
+| `convert_currency` | Convert an amount between any two currencies |
+
+---
+
+## Architecture
+
+```
+revolut-mcp/
+├── src/
+│   ├── index.ts                 # MCP server, tool registry
+│   ├── config.ts                # Env-based configuration
+│   ├── client/
+│   │   ├── auth.ts              # OAuth2 + mTLS authentication
+│   │   ├── revolut-client.ts    # Revolut Open Banking API client
+│   │   └── token-store.ts       # Persists tokens to disk
+│   ├── tools/
+│   │   ├── auth-tools.ts        # setup_auth, complete_auth
+│   │   ├── account-tools.ts     # get_accounts, get_account_balance
+│   │   ├── transaction-tools.ts # get_transactions, get_transaction_detail
+│   │   └── currency-tools.ts    # get_exchange_rate, convert_currency
+│   └── types/
+│       └── revolut.ts           # Open Banking API response types
+├── tests/                       # Jest unit tests
+├── .github/workflows/
+│   ├── test.yml                 # Runs on every push / PR
+│   └── publish.yml              # Publishes to npm on version tags
+├── .env.sandbox.template
+├── GitVersion.yml               # Semantic versioning config
+└── ...
+```
+
+**Authentication:** Revolut Open Banking uses mutual TLS (mTLS) plus OAuth 2.0 with a JWT Authorization Request (JAR). The server handles token refresh automatically. Tokens are persisted to a local `.tokens.json` file between restarts.
+
+**Currency rates:** The `get_exchange_rate` and `convert_currency` tools use the [Frankfurter API](https://www.frankfurter.app/) (European Central Bank data, no API key required) so they work independently of Revolut authentication.
+
+---
 
 ## Prerequisites
 
-- Node.js 18+ or Python 3.10+
-- Revolut Business API credentials
-- MCP-compatible client (e.g., Claude Desktop)
+- **Node.js 18+**
+- A **Revolut Developer** sandbox account — [developer.revolut.com](https://developer.revolut.com)
+- A generated mTLS transport certificate (see [Sandbox Setup](#sandbox-setup))
+
+---
+
+## Sandbox Setup
+
+### 1. Create a sandbox account
+
+Register at the [Revolut Developer Portal](https://developer.revolut.com). You can skip email verification and use mock details for the sandbox.
+
+### 2. Generate your transport certificate
+
+In the Developer Portal, go to **Sandbox → Authentication** and generate a Certificate Signing Request (CSR). This downloads a `transport.pem` and `private.key`.
+
+Alternatively, generate your own and upload the public certificate:
+
+```bash
+mkdir -p certs
+openssl req -newkey rsa:2048 -nodes \
+  -keyout certs/private.key \
+  -x509 -days 365 \
+  -out certs/transport.pem \
+  -subj "/CN=revolut-mcp-sandbox"
+```
+
+> Upload `transport.pem` to the Developer Portal under **Sandbox → Authentication**.
+
+### 3. Note your Client ID
+
+Find your **Client ID** on the Developer Portal **Overview** tab.
+
+### 4. Set your Redirect URI
+
+In the Developer Portal, add a redirect URI. For local testing `https://localhost:3000/callback` works — you only need to copy the `code` from the URL manually, no local server required.
+
+---
 
 ## Installation
 
-```bash
-# Clone the repository
-git clone https://github.com/yourusername/revolut-mcp-server.git
-cd revolut-mcp-server
+### From npm (once published)
 
-# Install dependencies
-npm install
-# or
-pip install -r requirements.txt
+```bash
+npm install -g @jeffnasseri/revolut-mcp
 ```
+
+### From source
+
+```bash
+git clone https://github.com/jeffnasseri/revolut-mcp.git
+cd revolut-mcp
+npm install
+npm run build
+```
+
+---
 
 ## Configuration
 
-1. Obtain your Revolut API credentials from the [Revolut Business Portal](https://business.revolut.com/)
-2. Create a `.env` file in the project root:
-
-```env
-REVOLUT_API_KEY=your_api_key_here
-REVOLUT_CLIENT_ID=your_client_id_here
-REVOLUT_ENVIRONMENT=sandbox  # or 'production'
-```
-
-3. Configure your MCP client to connect to this server
-
-## Usage
-
-### Starting the Server
+Copy the template and fill in your values:
 
 ```bash
-npm start
-# or
-python server.py
+cp .env.sandbox.template .env
 ```
 
-### MCP Client Configuration
+```env
+# .env
+REVOLUT_CLIENT_ID=your_client_id_here
+REVOLUT_CERT_PATH=./certs/transport.pem
+REVOLUT_KEY_PATH=./certs/private.key
+REVOLUT_REDIRECT_URI=https://localhost:3000/callback
+TOKEN_STORE_PATH=./.tokens.json
+REVOLUT_ENVIRONMENT=sandbox
+```
 
-Add to your MCP settings file (e.g., `claude_desktop_config.json`):
+| Variable | Required | Description |
+|---|---|---|
+| `REVOLUT_CLIENT_ID` | Yes | Client ID from the Developer Portal |
+| `REVOLUT_CERT_PATH` | Yes | Path to `transport.pem` |
+| `REVOLUT_KEY_PATH` | Yes | Path to `private.key` |
+| `REVOLUT_SIGNING_KEY_PATH` | No | Separate signing key (defaults to transport key) |
+| `REVOLUT_REDIRECT_URI` | Yes | Must match what's set in the portal |
+| `TOKEN_STORE_PATH` | No | Where to persist tokens (default: `./.tokens.json`) |
+| `REVOLUT_ENVIRONMENT` | No | Always `sandbox` for this server |
+
+---
+
+## Running the Server
+
+```bash
+# Built version
+node dist/index.js
+
+# Development (ts-node)
+npm run dev
+
+# Via npx (after npm publish)
+npx @jeffnasseri/revolut-mcp
+```
+
+---
+
+## Authentication Flow
+
+The server uses the Open Banking OAuth 2.0 authorization code flow. You only need to do this once — the server refreshes tokens automatically.
+
+### Step 1 — Ask Claude to set up auth
+
+```
+Call the setup_auth tool
+```
+
+Claude will return an authorization URL. Open it in your browser.
+
+### Step 2 — Authorize in the browser
+
+Revolut's sandbox UI will show an account selection / consent screen. Accept it. You'll be redirected to your redirect URI:
+
+```
+https://localhost:3000/callback?code=abc123xyz&...
+```
+
+Copy the `code` value from the URL.
+
+### Step 3 — Complete auth
+
+```
+Call complete_auth with code="abc123xyz"
+```
+
+Tokens are saved to `.tokens.json`. You're ready to use all account tools.
+
+> **Token lifetime:** Revolut sandbox access tokens expire after 1 hour. The server automatically refreshes them using the stored refresh token.
+
+---
+
+## Tools Reference
+
+### `setup_auth`
+
+Creates an account access consent and returns the Revolut authorization URL.
+
+**Input:** _(none)_
+
+**Output:** The authorization URL to visit in your browser.
+
+---
+
+### `complete_auth`
+
+Exchanges the authorization code for access + refresh tokens.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `code` | string | The `code` query param from the redirect URL |
+
+---
+
+### `get_accounts`
+
+Lists all accounts with their current balances.
+
+**Input:** _(none)_
+
+**Example output:**
+```
+Account ID : acc-001
+Currency   : GBP
+Type       : CurrentAccount
+Nickname   : Main GBP
+Balances:
+  InterimAvailable: 1234.56 GBP (as of 2024-01-15T10:00:00Z)
+  InterimBooked: 1300.00 GBP (as of 2024-01-15T10:00:00Z)
+```
+
+---
+
+### `get_account_balance`
+
+All balance types for a specific account.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `accountId` | string | Revolut account ID |
+
+---
+
+### `get_transactions`
+
+Transaction history with optional date filtering.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `accountId` | string | Revolut account ID |
+| `fromDate` | string? | Start date `YYYY-MM-DD` |
+| `toDate` | string? | End date `YYYY-MM-DD` |
+| `limit` | number? | Max results (1–500, default 50) |
+
+> **PSD2 Note:** Full transaction history is only available in the first 5 minutes after authorization. After that, the regulatory window is limited to the last 90 days.
+
+---
+
+### `get_transaction_detail`
+
+Full detail of a single transaction including FX info, merchant, and running balance.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `accountId` | string | Revolut account ID |
+| `transactionId` | string | Transaction ID |
+
+---
+
+### `get_exchange_rate`
+
+Live or historical exchange rates from the European Central Bank.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `baseCurrency` | string | ISO 4217 code, e.g. `GBP` |
+| `targetCurrencies` | string[]? | Specific targets, e.g. `["EUR","USD"]`. Omit for all. |
+| `date` | string? | Historical date `YYYY-MM-DD`. Omit for latest. |
+
+> Does **not** require Revolut authentication.
+
+---
+
+### `convert_currency`
+
+Convert an amount between two currencies.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `amount` | number | Amount to convert |
+| `fromCurrency` | string | Source currency code |
+| `toCurrency` | string | Target currency code |
+| `date` | string? | Historical date `YYYY-MM-DD`. Omit for latest. |
+
+---
+
+## Connecting to Claude Desktop
+
+Add to your Claude Desktop config file:
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "revolut": {
       "command": "node",
-      "args": ["/path/to/revolut-mcp-server/index.js"],
+      "args": ["/absolute/path/to/revolut-mcp/dist/index.js"],
       "env": {
-        "REVOLUT_API_KEY": "your_api_key_here"
+        "REVOLUT_CLIENT_ID": "your_client_id",
+        "REVOLUT_CERT_PATH": "/absolute/path/to/certs/transport.pem",
+        "REVOLUT_KEY_PATH": "/absolute/path/to/certs/private.key",
+        "REVOLUT_REDIRECT_URI": "https://localhost:3000/callback",
+        "TOKEN_STORE_PATH": "/absolute/path/to/.tokens.json"
       }
     }
   }
 }
 ```
 
-## Available Tools
+Restart Claude Desktop after saving. The revolut tools will appear in the tool list.
 
-### `get_accounts`
-Retrieve all Revolut accounts and their balances
+---
 
-### `get_transactions`
-Fetch transaction history with filtering options
-- Parameters: account_id, from_date, to_date, limit
+## Development
 
-### `get_counterparties`
-List saved beneficiaries and counterparties
+```bash
+npm install          # install deps
+npm run dev          # run with ts-node (no build step)
+npm run build        # compile TypeScript
+npm test             # run unit tests
+npm run test:watch   # watch mode
+npm run test:coverage
+npm run lint         # type-check only
+```
 
-### `get_exchange_rate`
-Get current exchange rates between currencies
+### Versioning
 
-## API Reference
+This project uses [GitVersion](https://gitversion.net/) with the config in `GitVersion.yml`. Semantic versions are determined from conventional commit messages:
 
-This server implements the following MCP protocol methods:
+| Commit prefix | Version bump |
+|---|---|
+| `feat:` | minor |
+| `fix:`, `refactor:`, `perf:` | patch |
+| `feat!:` or `fix!:` | major |
+| `chore:`, `docs:`, `ci:` | no bump |
 
-- `tools/list` - Lists all available banking tools
-- `tools/call` - Executes banking operations
-- `resources/list` - Lists accessible account resources
-- `resources/read` - Reads account and transaction data
+Publishing to npm is triggered by pushing a `v*` tag.
 
-## Security Considerations
+---
 
-- ✅ All API credentials should be stored in environment variables
-- ✅ Never commit sensitive data to version control
-- ✅ Use Revolut's sandbox environment for testing
-- ✅ Implement proper error handling for failed requests
-- ✅ Follow OAuth 2.0 best practices for authentication
+## Production Use
 
-## Development Status
+Integrating with a **live Revolut Personal account** requires:
 
-**Current Stage:** Initial Development
+1. Registering your application with Revolut for production Open Banking access
+2. Obtaining an **eIDAS** or **OBIE** qualified transport certificate from a regulated Certificate Authority
+3. Completing Open Banking compliance registration in your jurisdiction
+4. Complying with PSD2 / SCA requirements
 
-### Roadmap
+This is a non-trivial regulatory process. This MCP server intentionally targets the sandbox only and has no production configuration.
 
-- [ ] Core MCP server setup
-- [ ] Revolut API authentication
-- [ ] Basic account information retrieval
-- [ ] Transaction history access
-- [ ] Payment initiation (future)
-- [ ] Comprehensive error handling
-- [ ] Unit and integration tests
-- [ ] Documentation completion
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit issues or pull requests.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## Resources
-
-- [Model Context Protocol Documentation](https://modelcontextprotocol.io)
-- [Revolut Business API Docs](https://developer.revolut.com/docs/business/business-api)
-- [MCP Specification](https://spec.modelcontextprotocol.io)
-
-## License
-
-[MIT License](LICENSE)
+---
 
 ## Disclaimer
 
-This is an unofficial integration and is not affiliated with, endorsed by, or supported by Revolut Ltd. Use at your own risk. Always review the code and ensure compliance with Revolut's terms of service and API usage policies.
+This is an **unofficial, community project** and is not affiliated with, endorsed by, or supported by Revolut Ltd. Use at your own risk. Always review the code before connecting it to any financial account, even in sandbox.
 
-## Support
+## License
 
-For issues and questions:
-- Open an issue on GitHub
-- Check the [MCP community forums](https://github.com/modelcontextprotocol/mcp/discussions)
+[MIT](LICENSE)
