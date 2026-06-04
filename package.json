@@ -1,7 +1,7 @@
 {
   "name": "@jeffnasseri/revolut-mcp",
   "version": "0.0.0",
-  "description": "MCP server for Revolut Personal (sandbox) — balances, transactions, and currency conversion",
+  "description": "MCP server for the Revolut Business API — accounts, transactions, counterparties, payments, transfers, FX, and team, over a scope-based tool architecture.",
   "main": "dist/index.js",
   "bin": {
     "revolut-mcp": "dist/index.js"
@@ -13,22 +13,37 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "tsc --noEmit"
+    "test:integration": "REVOLUT_RUN_INTEGRATION=1 jest live",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
     "revolut",
+    "revolut-business",
+    "business-api",
     "banking",
+    "payments",
     "open-banking",
     "model-context-protocol"
   ],
   "author": "Jeff Nasseri",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeff-nasseri/revolut-mcp.git"
+  },
+  "homepage": "https://github.com/jeff-nasseri/revolut-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/jeff-nasseri/revolut-mcp/issues"
+  },
   "files": [
     "dist/**/*",
+    "docs/**/*",
     "README.md",
     "CONTRIBUTING.md",
-    "SECURITY.md"
+    "SECURITY.md",
+    "LICENSE"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2",
