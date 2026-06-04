@@ -1,77 +1,190 @@
-name: Publish to npm
+# =============================================================================
+# Publish — runs on every push to master.
+# 1. version : compute the release version with GitVersion
+# 2. test    : run the unit suite across Node 18/20/22
+# 3. npm     : pack & publish to npm (version = majorMinorPatch, 3-part SemVer)
+# 4. docker  : build & push a multi-arch image to GHCR (tagged with both
+#              majorMinorPatch and the 4-part assemblySemVer)
+# 5. release : create the vX.Y.Z git tag + GitHub release
+#
+# Secrets:
+#   NPM_TOKEN  — npm automation token with publish rights to the @jeffnasseri
+#                scope (required for the npm job).
+#   GITHUB_TOKEN (built-in) — used to push the Docker image to GHCR and to
+#                create the release; no extra secret needed for Docker.
+# =============================================================================
+name: Publish
 
 on:
   push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: read
-  id-token: write
+    branches:
+      - master
 
 jobs:
-  test:
-    name: Run Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20.x
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-
   version:
-    name: Determine Version
+    name: GitVersion
     runs-on: ubuntu-latest
     outputs:
-      semver: ${{ steps.gitversion.outputs.semVer }}
+      majorMinorPatch: ${{ steps.gitversion.outputs.majorMinorPatch }}
+      assemblySemVer: ${{ steps.gitversion.outputs.assemblySemVer }}
+      major: ${{ steps.gitversion.outputs.major }}
+      minor: ${{ steps.gitversion.outputs.minor }}
+      semVer: ${{ steps.gitversion.outputs.semVer }}
+      should_publish: ${{ github.ref == 'refs/heads/master' && github.event_name == 'push' }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v3
+        uses: gittools/actions/gitversion/setup@v0.10.2
         with:
           versionSpec: "6.x"
 
       - name: Determine Version
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v3
+        uses: gittools/actions/gitversion/execute@v0.10.2
         with:
           useConfigFile: true
-          configFilePath: GitVersion.yml
 
-      - name: Display Version
-        run: echo "SemVer = ${{ steps.gitversion.outputs.semVer }}"
+      - name: Display resolved version
+        run: |
+          echo "MajorMinorPatch: ${{ steps.gitversion.outputs.majorMinorPatch }}"
+          echo "AssemblySemVer:  ${{ steps.gitversion.outputs.assemblySemVer }}"
 
-  publish:
-    name: Build & Publish
-    needs: [test, version]
+  test:
+    name: Unit tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  npm:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: [version, test]
+    if: needs.version.outputs.should_publish == 'true'
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
           cache: npm
-          registry-url: https://registry.npmjs.org/
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Set package version
-        run: npm version ${{ needs.version.outputs.semver }} --no-git-tag-version
+      - run: npm ci
 
       - name: Build
         run: npm run build
 
-      - name: Publish to npm
-        run: npm publish --access public
+      - name: Set package version
+        run: npm version "${{ needs.version.outputs.majorMinorPatch }}" --no-git-tag-version --allow-same-version
+
+      - name: Publish (skip if version already exists)
+        run: |
+          VERSION="${{ needs.version.outputs.majorMinorPatch }}"
+          if npm view "@jeffnasseri/revolut-mcp@${VERSION}" version >/dev/null 2>&1; then
+            echo "@jeffnasseri/revolut-mcp@${VERSION} already published — skipping."
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  docker:
+    name: Build and push Docker image
+    runs-on: ubuntu-latest
+    needs: [version, test]
+    if: needs.version.outputs.should_publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ needs.version.outputs.majorMinorPatch }}
+            type=raw,value=${{ needs.version.outputs.assemblySemVer }}
+            type=raw,value=${{ needs.version.outputs.major }}.${{ needs.version.outputs.minor }}
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  create-release:
+    name: Tag and release
+    runs-on: ubuntu-latest
+    needs: [version, npm, docker]
+    if: always() && needs.version.outputs.should_publish == 'true' && needs.npm.result == 'success' && needs.docker.result == 'success'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create and push git tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          TAG="v${{ needs.version.outputs.majorMinorPatch }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skipping."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.majorMinorPatch }}
+          name: Release v${{ needs.version.outputs.majorMinorPatch }}
+          body: |
+            ## Release v${{ needs.version.outputs.majorMinorPatch }}
+
+            Automatically published by GitHub Actions.
+
+            - **npm:** `@jeffnasseri/revolut-mcp@${{ needs.version.outputs.majorMinorPatch }}`
+            - **Docker:** `ghcr.io/${{ github.repository }}:${{ needs.version.outputs.majorMinorPatch }}`
+            - **Commit:** ${{ github.sha }}
+          draft: false
+          prerelease: false

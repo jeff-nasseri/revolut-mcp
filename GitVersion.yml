@@ -1,28 +1,39 @@
-mode: Mainline
-branches:
-  main:
-    regex: ^main$
-    increment: Patch
-    prevent-increment-of-merged-branch-version: false
-  feature:
-    regex: ^feature[/-]
-    increment: Minor
-    source-branches: ["main"]
-  fix:
-    regex: ^fix[/-]
-    increment: Patch
-    source-branches: ["main"]
-  release:
-    regex: ^release[/-]
-    increment: None
-    source-branches: ["main"]
-  hotfix:
-    regex: ^hotfix[/-]
-    increment: Patch
-    source-branches: ["main"]
-major-version-bump-message: "^(feat|fix|refactor|perf)(\\(.+\\))?!:"
-minor-version-bump-message: "^feat(\\(.+\\))?:"
-patch-version-bump-message: "^(fix|refactor|perf)(\\(.+\\))?:"
-no-bump-message: "^(chore|docs|style|test|build|ci)(\\(.+\\))?:"
-tag-prefix: "v"
+# GitVersion configuration
+#
+# Strategy: GitHub Flow — all PRs merge directly to master.
+# No develop / release / feature branches required.
+#
+# Version format:
+#   npm package   (majorMinorPatch / 3-part SemVer): MAJOR.MINOR.PATCH    e.g. 0.1.0
+#   Docker image  (assemblySemVer, 4-part):          MAJOR.MINOR.PATCH.0  e.g. 0.1.0.0
+#   Git tag       (semVer):                          vMAJOR.MINOR.PATCH   e.g. v0.1.0
+#
+# npm requires a 3-part SemVer, so the package version uses `majorMinorPatch`
+# (which is `assemblySemVer` without the trailing build digit). The Docker image
+# is additionally tagged with the full 4-part `assemblySemVer` for parity.
+#
+# Bump rules (conventional commits):
+#   feat:                                → Minor bump  0.x.0
+#   fix | chore | refactor | perf | …    → Patch bump  0.0.x
+#   docs: | doc: | documentation:        → No bump     (pipeline still runs; npm skips duplicate)
+#   untyped message                      → Patch bump  (fallback via branch increment)
+#   +semver: breaking  (footer)          → Major bump
+
+mode: ContinuousDelivery
+next-version: 0.1.0
+
+# Parse every commit on HEAD→version-source; the highest matching rule wins.
 commit-message-incrementing: Enabled
+
+major-version-bump-message: '^\+semver:\s*(breaking|major)'
+minor-version-bump-message: '^feat(\(.+\))?!?:'
+patch-version-bump-message: '^(fix|chore|refactor|perf|style|ci|test|build|revert)(\(.+\))?!?:'
+no-bump-message: '^(docs?|documentation)(\(.+\))?!?:'
+
+branches:
+  master:
+    regex: ^master$
+    mode: ContinuousDelivery
+    label: ''
+    increment: Patch
+    is-release-branch: true
