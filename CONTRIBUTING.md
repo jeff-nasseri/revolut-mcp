@@ -8,31 +8,64 @@ Thank you for your interest in contributing to revolut-mcp!
 
 - Node.js 18+
 - npm 9+
-- A Revolut Developer account (sandbox credentials)
+- A Revolut Business **sandbox** account with an API certificate (see the
+  [Authentication guide](docs/getting-started/authentication.md))
 
 ### Local Setup
 
 ```bash
-git clone https://github.com/yourusername/revolut-mcp.git
+git clone https://github.com/jeff-nasseri/revolut-mcp.git
 cd revolut-mcp
 npm install
 cp .env.sandbox.template .env
-# Fill in .env with your sandbox credentials
+# Fill in REVOLUT_CLIENT_ID, the private key path, and the redirect URI
 ```
 
-### Running Tests
+### Common Commands
 
 ```bash
-npm test             # run all tests
-npm run test:watch   # watch mode
-npm run test:coverage
+npm run build          # compile TypeScript → dist/
+npm run dev            # run with ts-node
+npm test               # unit tests
+npm run test:coverage  # coverage report
+npm run lint           # type-check only (tsc --noEmit)
 ```
 
-### Building
+The live integration tests are opt-in (they hit the sandbox and need a valid token store):
 
 ```bash
-npm run build        # compiles TypeScript → dist/
+REVOLUT_RUN_INTEGRATION=1 npm run test:integration
 ```
+
+## Architecture
+
+```
+src/
+├── index.ts            # entrypoint (stdio transport)
+├── server.ts           # builds the MCP server from all scopes
+├── config.ts           # env-based configuration
+├── version.ts          # server identity
+├── client/             # auth (JWT client assertion) + HTTP client + token store
+├── types/revolut.ts    # Business API response types
+├── utils/              # tool registry, zod→JSON-Schema, formatting, errors
+└── scope/
+    ├── index.ts        # aggregates every scope
+    └── <scope>/index.ts # one folder per scope, exporting a Scope of tools
+```
+
+Each scope exports a `Scope` (`{ name, description, tools }`). Each tool is built with `defineTool({
+name, description, schema, annotations, handler })`, where `schema` is a Zod object and `handler`
+receives the parsed input plus a `ToolContext` (`config`, `auth`, `client`).
+
+## Adding a New Tool
+
+1. Add (or extend) the client method in `src/client/revolut-client.ts`.
+2. Add the tool to the relevant `src/scope/<scope>/index.ts` with a Zod input schema, a clear
+   description, and appropriate `annotations` (`readOnlyHint`, `destructiveHint`, etc.).
+3. If it's a new scope, create `src/scope/<scope>/index.ts` and register it in `src/scope/index.ts`.
+4. Add unit tests in `tests/<scope>.test.ts` (use the mock client in `tests/mocks/`).
+5. Document it in `docs/reference/<scope>/README.md`.
+6. Update the Features table in `README.md`.
 
 ## Contribution Guidelines
 
@@ -47,39 +80,41 @@ npm run build        # compiles TypeScript → dist/
 
 ### Commit Messages
 
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
+Follow [Conventional Commits](https://www.conventionalcommits.org/) — GitVersion reads these to
+determine the next version:
 
 ```
-feat(transactions): add pagination support
-fix(auth): handle expired refresh token gracefully
-docs(readme): clarify sandbox setup steps
+feat(payments): add scheduled payment support
+fix(auth): preserve refresh token across refresh
+docs(readme): clarify sandbox setup
 ```
 
-GitVersion reads these prefixes to determine the next semantic version automatically.
+| Prefix | Version bump |
+|---|---|
+| `feat:` | minor |
+| `fix:`, `chore:`, `refactor:`, `perf:`, `ci:`, `test:`, `build:` | patch |
+| `docs:` | no bump |
+| `+semver: breaking` (footer) | major |
 
 ### Pull Requests
 
-1. Fork the repo and create your branch from `master`
-2. Add or update tests for any changed behaviour
-3. Make sure `npm run lint` and `npm test` pass
-4. Open a PR with a clear description of what changed and why
-5. Reference any related issues with `Closes #N`
-
-### Adding a New Tool
-
-1. Define input schema with Zod in `src/tools/<area>-tools.ts`
-2. Implement the tool function (returns a formatted string)
-3. Register it in `src/index.ts` — both in `ListToolsRequestSchema` and `CallToolRequestSchema`
-4. Add unit tests in `tests/<area>.test.ts`
-5. Update the Tools Reference table in `README.md`
+1. Fork and branch from `master`.
+2. Add or update tests for any changed behaviour.
+3. Make sure `npm run lint`, `npm run build`, and `npm test` pass.
+4. Open a PR with a clear description; reference related issues with `Closes #N`.
 
 ## Code Style
 
-- TypeScript strict mode is enforced
-- No `any` types
-- Prefer explicit return types on exported functions
-- Keep tool functions pure (injectable dependencies, not hardcoded globals)
-- No inline comments explaining *what* the code does — only *why* when non-obvious
+- TypeScript strict mode is enforced.
+- Avoid `any` (the one deliberate exception is the erased tool-collection element type — see
+  `src/utils/tool.ts`).
+- Prefer explicit return types on exported functions.
+- Keep tool handlers pure — dependencies arrive via `ToolContext`, not globals.
+- Comment *why*, not *what*, and only when non-obvious.
+
+## Security
+
+Never commit your private key, `.env`, or `.tokens.json`. See [SECURITY.md](SECURITY.md).
 
 ## License
 
