@@ -22,17 +22,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 
-# Run as an unprivileged user.
-RUN addgroup -g 1000 mcpuser && adduser -D -u 1000 -G mcpuser mcpuser
-
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
 
 COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R mcpuser:mcpuser /app
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R node:node /app
 
-USER mcpuser
+# Run as the built-in, non-root `node` user (uid/gid 1000 in node:alpine).
+USER node
 
 # The server speaks the Model Context Protocol over stdio.
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
