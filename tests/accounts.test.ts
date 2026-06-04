@@ -1,87 +1,72 @@
-import { getAccounts, getAccountBalance } from '../src/tools/account-tools.js';
-import { createMockRevolutClient, mockBalancesResponse } from './mocks/revolut-client.mock.js';
-import { RevolutClient } from '../src/client/revolut-client.js';
+import { accountsScope } from '../src/scope/accounts/index.js';
+import { callTool, createMockClient, getTool, mockContext } from './mocks/revolut-client.mock.js';
 
-describe('account-tools', () => {
-  let mockClient: ReturnType<typeof createMockRevolutClient>;
+describe('accounts scope', () => {
+  let client: ReturnType<typeof createMockClient>;
+  let ctx: ReturnType<typeof mockContext>;
 
   beforeEach(() => {
-    mockClient = createMockRevolutClient();
+    client = createMockClient();
+    ctx = mockContext(client);
   });
 
-  describe('getAccounts', () => {
-    it('lists all accounts with balances', async () => {
-      const result = await getAccounts(mockClient as unknown as RevolutClient);
-
-      expect(mockClient.getAccounts).toHaveBeenCalledTimes(1);
-      expect(mockClient.getAccountBalances).toHaveBeenCalledTimes(2);
-      expect(result).toContain('acc-001');
-      expect(result).toContain('acc-002');
-      expect(result).toContain('GBP');
-      expect(result).toContain('EUR');
-      expect(result).toContain('1234.56');
+  describe('get_accounts', () => {
+    it('lists accounts with formatted balances', async () => {
+      const result = await callTool(getTool(accountsScope, 'get_accounts'), {}, ctx);
+      expect(client.getAccounts).toHaveBeenCalledTimes(1);
+      expect(result).toContain('2 account(s)');
+      expect(result).toContain('Main');
+      expect(result).toContain('28,900 GBP');
+      expect(result).toContain('European suppliers');
+      expect(result).toContain('3,280 EUR');
     });
 
-    it('returns no accounts message when list is empty', async () => {
-      mockClient.getAccounts.mockResolvedValue({
-        Data: { Account: [] },
-        Links: { Self: '' },
-        Meta: { TotalPages: 0 },
-      });
-
-      const result = await getAccounts(mockClient as unknown as RevolutClient);
+    it('handles an empty account list', async () => {
+      client.getAccounts.mockResolvedValue([]);
+      const result = await callTool(getTool(accountsScope, 'get_accounts'), {}, ctx);
       expect(result).toBe('No accounts found.');
     });
+  });
 
-    it('includes account nickname in output', async () => {
-      const result = await getAccounts(mockClient as unknown as RevolutClient);
-      expect(result).toContain('Main GBP');
+  describe('get_account', () => {
+    it('returns a single account', async () => {
+      const result = await callTool(getTool(accountsScope, 'get_account'), { accountId: 'acc-gbp' }, ctx);
+      expect(client.getAccount).toHaveBeenCalledWith('acc-gbp');
+      expect(result).toContain('Main');
+      expect(result).toContain('28,900 GBP');
+    });
+
+    it('rejects a missing accountId', async () => {
+      await expect(
+        callTool(getTool(accountsScope, 'get_account'), {}, ctx)
+      ).rejects.toThrow();
     });
   });
 
-  describe('getAccountBalance', () => {
-    it('returns balances for a specific account', async () => {
-      const result = await getAccountBalance(mockClient as unknown as RevolutClient, {
-        accountId: 'acc-001',
-      });
-
-      expect(mockClient.getAccountBalances).toHaveBeenCalledWith('acc-001');
-      expect(result).toContain('acc-001');
-      expect(result).toContain('InterimAvailable');
-      expect(result).toContain('1234.56');
-      expect(result).toContain('GBP');
+  describe('get_account_bank_details', () => {
+    it('renders both local and IBAN scheme sets', async () => {
+      const result = await callTool(
+        getTool(accountsScope, 'get_account_bank_details'),
+        { accountId: 'acc-gbp' },
+        ctx
+      );
+      expect(client.getAccountBankDetails).toHaveBeenCalledWith('acc-gbp');
+      expect(result).toContain('06543359');
+      expect(result).toContain('042909');
+      expect(result).toContain('GB20REVO04290906543359');
+      expect(result).toContain('REVOGB21');
+      expect(result).toContain('faster_payments');
+      expect(result).toContain('2–24 hours');
     });
 
-    it('returns not found message when no balances exist', async () => {
-      mockClient.getAccountBalances.mockResolvedValue({
-        Data: { Balance: [] },
-        Links: { Self: '' },
-        Meta: { TotalPages: 0 },
-      });
-
-      const result = await getAccountBalance(mockClient as unknown as RevolutClient, {
-        accountId: 'acc-999',
-      });
-      expect(result).toContain('No balance data found for account acc-999');
-    });
-
-    it('shows debit indicator with minus prefix', async () => {
-      mockClient.getAccountBalances.mockResolvedValue({
-        ...mockBalancesResponse,
-        Data: {
-          Balance: [
-            {
-              ...mockBalancesResponse.Data.Balance[0],
-              CreditDebitIndicator: 'Debit' as const,
-            },
-          ],
-        },
-      });
-
-      const result = await getAccountBalance(mockClient as unknown as RevolutClient, {
-        accountId: 'acc-001',
-      });
-      expect(result).toContain('-1234.56');
+    it('reports when there are no bank details', async () => {
+      client.getAccountBankDetails.mockResolvedValue([]);
+      const result = await callTool(
+        getTool(accountsScope, 'get_account_bank_details'),
+        { accountId: 'acc-x' },
+        ctx
+      );
+      expect(result).toContain('No bank details found');
     });
   });
 });
