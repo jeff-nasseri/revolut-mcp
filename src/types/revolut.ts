@@ -1,136 +1,208 @@
-// Revolut Open Banking API response shapes (OB UK 3.1 spec)
+// Revolut Business API response shapes (sandbox-b2b.revolut.com / b2b.revolut.com).
+// Monetary amounts are expressed in the major unit of the currency (e.g. 28900 = 28,900.00 GBP).
 
-export interface OBAmount {
-  Amount: string;
-  Currency: string;
+export type AccountState = 'active' | 'inactive' | string;
+
+export interface RevolutAccount {
+  id: string;
+  name?: string;
+  balance: number;
+  currency: string;
+  state: AccountState;
+  public: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface OBAccount {
-  AccountId: string;
-  Currency: string;
-  AccountType: 'Business' | 'Personal';
-  AccountSubType:
-    | 'ChargeCard'
-    | 'CreditCard'
-    | 'CurrentAccount'
-    | 'EMoney'
-    | 'Loan'
-    | 'Mortgage'
-    | 'PrePaidCard'
-    | 'Savings';
-  Description?: string;
-  Nickname?: string;
-  Account?: Array<{
-    SchemeName: string;
-    Identification: string;
-    Name?: string;
-    SecondaryIdentification?: string;
-  }>;
+export interface BeneficiaryAddress {
+  street_line1?: string;
+  street_line2?: string;
+  region?: string;
+  city?: string;
+  country?: string;
+  postcode?: string;
 }
 
-export interface OBReadAccountResponse {
-  Data: { Account: OBAccount[] };
-  Links: { Self: string };
-  Meta: { TotalPages: number };
+export interface EstimatedTime {
+  unit: string;
+  min?: number;
+  max?: number;
 }
 
-export type BalanceType =
-  | 'ClosingAvailable'
-  | 'ClosingBooked'
-  | 'Expected'
-  | 'ForwardAvailable'
-  | 'Information'
-  | 'InterimAvailable'
-  | 'InterimBooked'
-  | 'OpeningAvailable'
-  | 'OpeningBooked'
-  | 'PreviouslyClosedBooked';
-
-export interface OBBalance {
-  AccountId: string;
-  Amount: OBAmount;
-  CreditDebitIndicator: 'Credit' | 'Debit';
-  Type: BalanceType;
-  DateTime: string;
+export interface BankDetail {
+  // Local scheme fields
+  account_no?: string;
+  sort_code?: string;
+  routing_number?: string;
+  // IBAN scheme fields
+  iban?: string;
+  bic?: string;
+  bank_country?: string;
+  // Shared
+  beneficiary?: string;
+  beneficiary_address?: BeneficiaryAddress;
+  pooled?: boolean;
+  unique_reference?: string;
+  schemes?: string[];
+  estimated_time?: EstimatedTime;
 }
 
-export interface OBReadBalanceResponse {
-  Data: { Balance: OBBalance[] };
-  Links: { Self: string };
-  Meta: { TotalPages: number };
+export interface TransactionCounterparty {
+  id?: string;
+  account_id?: string;
+  account_type?: string;
 }
 
-export interface OBTransaction {
-  AccountId: string;
-  TransactionId: string;
-  TransactionReference?: string;
-  Amount: OBAmount;
-  CreditDebitIndicator: 'Credit' | 'Debit';
-  Status: 'Booked' | 'Pending';
-  BookingDateTime: string;
-  ValueDateTime?: string;
-  TransactionInformation?: string;
-  MerchantDetails?: {
-    MerchantName?: string;
-    MerchantCategoryCode?: string;
-  };
-  CurrencyExchange?: {
-    SourceCurrency: string;
-    TargetCurrency?: string;
-    UnitCurrency?: string;
-    ExchangeRate?: number;
-    InstructedAmount?: OBAmount;
-  };
-  Balance?: {
-    Amount: OBAmount;
-    CreditDebitIndicator: 'Credit' | 'Debit';
-    Type: string;
-  };
-  CreditorAgent?: { Identification?: string };
-  DebtorAgent?: { Identification?: string };
+export interface TransactionLeg {
+  leg_id: string;
+  account_id: string;
+  counterparty?: TransactionCounterparty;
+  amount: number;
+  currency: string;
+  bill_amount?: number;
+  bill_currency?: string;
+  description?: string;
+  balance?: number;
 }
 
-export interface OBReadTransactionResponse {
-  Data: { Transaction: OBTransaction[] };
-  Links: {
-    Self: string;
-    First?: string;
-    Prev?: string;
-    Next?: string;
-    Last?: string;
-  };
-  Meta: {
-    TotalPages: number;
-    FirstAvailableDateTime?: string;
-    LastAvailableDateTime?: string;
-  };
+export type TransactionType =
+  | 'atm'
+  | 'card_payment'
+  | 'card_refund'
+  | 'card_chargeback'
+  | 'card_credit'
+  | 'exchange'
+  | 'transfer'
+  | 'loan'
+  | 'fee'
+  | 'refund'
+  | 'topup'
+  | 'topup_return'
+  | 'tax'
+  | 'tax_refund'
+  | string;
+
+export type TransactionState =
+  | 'created'
+  | 'pending'
+  | 'completed'
+  | 'declined'
+  | 'failed'
+  | 'reverted'
+  | string;
+
+export interface TransactionMerchant {
+  name?: string;
+  city?: string;
+  category_code?: string;
+  country?: string;
 }
 
-export interface OBConsentRequest {
-  Data: {
-    Permissions: string[];
-    ExpirationDateTime?: string;
-    TransactionFromDateTime?: string;
-    TransactionToDateTime?: string;
-  };
-  Risk: Record<string, never>;
+export interface RevolutTransaction {
+  id: string;
+  type: TransactionType;
+  state: TransactionState;
+  request_id?: string;
+  reason_code?: string;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string;
+  scheduled_for?: string;
+  reference?: string;
+  legs: TransactionLeg[];
+  card?: Record<string, unknown>;
+  merchant?: TransactionMerchant;
 }
 
-export interface OBConsentResponse {
-  Data: {
-    ConsentId: string;
-    Status: 'AwaitingAuthorisation' | 'Authorised' | 'Rejected' | 'Revoked';
-    CreationDateTime: string;
-    StatusUpdateDateTime: string;
-    Permissions: string[];
-    ExpirationDateTime?: string;
-    TransactionFromDateTime?: string;
-    TransactionToDateTime?: string;
-  };
-  Risk: Record<string, never>;
-  Links: { Self: string };
-  Meta: { TotalPages: number };
+export interface CounterpartyAccount {
+  id: string;
+  type?: string;
+  name?: string;
+  currency?: string;
+  iban?: string;
+  bic?: string;
+  account_no?: string;
+  sort_code?: string;
+  routing_number?: string;
+  bank_country?: string;
+  recipient_charges?: string;
 }
+
+export interface Counterparty {
+  id: string;
+  name: string;
+  state: string;
+  created_at: string;
+  updated_at: string;
+  profile_type?: string;
+  country?: string;
+  revtag?: string;
+  phone?: string;
+  accounts?: CounterpartyAccount[];
+}
+
+export interface MoneyAmount {
+  amount: number;
+  currency: string;
+}
+
+export interface ExchangeRate {
+  from: MoneyAmount;
+  to: MoneyAmount;
+  rate: number;
+  fee: MoneyAmount;
+  rate_date: string;
+}
+
+export interface TransferReason {
+  country: string;
+  currency: string;
+  code: string;
+  description: string;
+}
+
+export interface PaymentDraftSummary {
+  id: string;
+  title?: string;
+  state?: string;
+  created_at?: string;
+  scheduled_for?: string;
+}
+
+export interface PaymentDraftsResponse {
+  payment_orders: PaymentDraftSummary[];
+}
+
+export interface TeamMember {
+  id: string;
+  email?: string;
+  role_id?: string;
+  state?: string;
+  created_at?: string;
+  updated_at?: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+// --- Write operation results ---
+
+export interface PaymentResult {
+  id: string;
+  state: string;
+  created_at?: string;
+  completed_at?: string;
+  [key: string]: unknown;
+}
+
+export type TransferResult = PaymentResult;
+
+export interface ExchangeResult {
+  id: string;
+  state?: string;
+  [key: string]: unknown;
+}
+
+// --- Authentication ---
 
 export interface TokenResponse {
   access_token: string;
@@ -143,13 +215,7 @@ export interface TokenResponse {
 export interface StoredTokens {
   accessToken: string;
   refreshToken?: string;
+  tokenType?: string;
   expiresAt: number;
   scope?: string;
-}
-
-export interface ExchangeRateResponse {
-  amount: number;
-  base: string;
-  date: string;
-  rates: Record<string, number>;
 }

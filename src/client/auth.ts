@@ -1,194 +1,133 @@
-import https from 'https';
 import fs from 'fs';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
 import { Config } from '../config.js';
 import { TokenStore } from './token-store.js';
-import {
-  OBConsentRequest,
-  OBConsentResponse,
-  StoredTokens,
-  TokenResponse,
-} from '../types/revolut.js';
+import { StoredTokens, TokenResponse } from '../types/revolut.js';
 
-const ACCOUNT_PERMISSIONS = [
-  'ReadAccountsBasic',
-  'ReadAccountsDetail',
-  'ReadBalances',
-  'ReadTransactionsCredits',
-  'ReadTransactionsDebits',
-  'ReadTransactionsDetail',
-] as const;
+const CLIENT_ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 
+/**
+ * Revolut Business API authentication.
+ *
+ * The Business API uses OAuth 2.0 with a `private_key_jwt` client assertion:
+ *   1. The user authorizes the app in the browser and gets a `code`.
+ *   2. We exchange that `code` for access + refresh tokens, authenticating the
+ *      request with a JWT signed by our private key (the public X.509 cert is
+ *      uploaded to the Revolut portal).
+ *   3. Access tokens are short-lived (~40 min) and refreshed automatically using
+ *      the long-lived refresh token (the consent window is ~90 days).
+ *
+ * Unlike the Open Banking API, the Business API does NOT use mutual TLS — the
+ * certificate's private key only signs the JWT; API calls are plain HTTPS with a
+ * Bearer token.
+ */
 export class RevolutAuth {
   private readonly store: TokenStore;
-  private readonly mtlsAgent: https.Agent;
 
   constructor(private readonly config: Config) {
     this.store = new TokenStore(config.tokenStorePath);
-    this.mtlsAgent = this.buildMtlsAgent();
   }
 
-  private buildMtlsAgent(): https.Agent {
-    return new https.Agent({
-      cert: fs.readFileSync(this.config.certPath),
-      key: fs.readFileSync(this.config.keyPath),
-      rejectUnauthorized: true,
-    });
-  }
-
-  private async fetchClientCredentialsToken(): Promise<string> {
-    const params = new URLSearchParams({
-      grant_type: 'client_credentials',
-      scope: 'accounts',
-      client_id: this.config.clientId,
-    });
-
-    const response = await axios.post<TokenResponse>(
-      `${this.config.authUrl}/token`,
-      params.toString(),
-      {
-        httpsAgent: this.mtlsAgent,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }
+  private loadPrivateKey(): string | Buffer {
+    if (this.config.privateKey) return this.config.privateKey;
+    if (this.config.privateKeyPath) return fs.readFileSync(this.config.privateKeyPath);
+    throw new Error(
+      'No private key configured. Set REVOLUT_PRIVATE_KEY (PEM contents) or REVOLUT_PRIVATE_KEY_PATH.'
     );
-
-    return response.data.access_token;
   }
 
-  async createConsent(): Promise<string> {
-    const clientToken = await this.fetchClientCredentialsToken();
-
-    const body: OBConsentRequest = {
-      Data: {
-        Permissions: [...ACCOUNT_PERMISSIONS],
-        ExpirationDateTime: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-        TransactionFromDateTime: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-        TransactionToDateTime: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      Risk: {},
+  /** Sign a short-lived client-assertion JWT (RS256) for the token endpoint. */
+  signClientAssertion(ttlSeconds = 300): string {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      iss: this.config.jwtIssuer,
+      sub: this.config.clientId,
+      aud: this.config.jwtAudience,
+      iat: now,
+      exp: now + ttlSeconds,
     };
-
-    const response = await axios.post<OBConsentResponse>(
-      `${this.config.baseUrl}/account-access-consents`,
-      body,
-      {
-        httpsAgent: this.mtlsAgent,
-        headers: {
-          Authorization: `Bearer ${clientToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    return response.data.Data.ConsentId;
+    return jwt.sign(payload, this.loadPrivateKey(), { algorithm: 'RS256' });
   }
 
-  buildAuthorizationUrl(consentId: string): string {
-    const signingKeyPath = this.config.signingKeyPath ?? this.config.keyPath;
-    const signingKey = fs.readFileSync(signingKeyPath);
-    const nonce = uuidv4();
-
-    const claims = {
-      iss: this.config.clientId,
-      aud: this.config.baseUrl,
-      response_type: 'code',
+  /** Step 1: the URL the user opens to authorize the app and obtain a `code`. */
+  buildAuthorizationUrl(): string {
+    const params = new URLSearchParams({
       client_id: this.config.clientId,
       redirect_uri: this.config.redirectUri,
-      scope: 'accounts',
-      nonce,
-      claims: {
-        id_token: {
-          openbanking_intent_id: { value: consentId, essential: true },
-        },
-      },
-    };
-
-    const requestJwt = jwt.sign(claims, signingKey, {
-      algorithm: 'PS256',
-      expiresIn: '1h',
-    });
-
-    const params = new URLSearchParams({
       response_type: 'code',
-      client_id: this.config.clientId,
-      redirect_uri: this.config.redirectUri,
-      scope: 'accounts',
-      nonce,
-      request: requestJwt,
     });
-
-    return `${this.config.authUiUrl}?${params.toString()}`;
+    return `${this.config.authBaseUrl}/app-confirm?${params.toString()}`;
   }
 
+  /** Step 2: exchange the authorization code for access + refresh tokens. */
   async exchangeCode(code: string): Promise<StoredTokens> {
-    const params = new URLSearchParams({
+    const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
-      redirect_uri: this.config.redirectUri,
       client_id: this.config.clientId,
+      client_assertion_type: CLIENT_ASSERTION_TYPE,
+      client_assertion: this.signClientAssertion(),
     });
 
     const response = await axios.post<TokenResponse>(
-      `${this.config.authUrl}/token`,
-      params.toString(),
-      {
-        httpsAgent: this.mtlsAgent,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }
+      `${this.config.apiBaseUrl}/auth/token`,
+      body.toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
 
-    const tokens = this.tokenResponseToStored(response.data);
+    const tokens = this.toStored(response.data);
     this.store.save(tokens);
     return tokens;
   }
 
+  /** Returns a valid access token, refreshing transparently when expired. */
   async getValidAccessToken(): Promise<string> {
     const stored = this.store.load();
-    if (!stored) throw new Error('Not authenticated. Run the setup_auth tool first.');
+    if (!stored) {
+      throw new Error(
+        'Not authenticated. Run the setup_auth tool, authorize in the browser, then call complete_auth with the code.'
+      );
+    }
 
     if (!this.store.isExpired(stored)) return stored.accessToken;
 
     if (!stored.refreshToken) {
       this.store.clear();
-      throw new Error('Session expired. Run setup_auth again to re-authenticate.');
+      throw new Error('Session expired and no refresh token available. Re-run setup_auth.');
     }
 
     return this.refreshAccessToken(stored.refreshToken);
   }
 
   private async refreshAccessToken(refreshToken: string): Promise<string> {
-    const params = new URLSearchParams({
+    const body = new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
       client_id: this.config.clientId,
+      client_assertion_type: CLIENT_ASSERTION_TYPE,
+      client_assertion: this.signClientAssertion(),
     });
 
     const response = await axios.post<TokenResponse>(
-      `${this.config.authUrl}/token`,
-      params.toString(),
-      {
-        httpsAgent: this.mtlsAgent,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      }
+      `${this.config.apiBaseUrl}/auth/token`,
+      body.toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
 
-    const tokens = this.tokenResponseToStored(response.data);
+    // Refresh responses typically omit a new refresh token — keep the existing one.
+    const tokens = this.toStored(response.data, refreshToken);
     this.store.save(tokens);
     return tokens.accessToken;
   }
 
-  private tokenResponseToStored(response: TokenResponse): StoredTokens {
+  private toStored(response: TokenResponse, fallbackRefresh?: string): StoredTokens {
     return {
       accessToken: response.access_token,
-      refreshToken: response.refresh_token,
+      refreshToken: response.refresh_token ?? fallbackRefresh,
+      tokenType: response.token_type,
       expiresAt: Date.now() + response.expires_in * 1000,
       scope: response.scope,
     };
-  }
-
-  getMtlsAgent(): https.Agent {
-    return this.mtlsAgent;
   }
 }
