@@ -1,0 +1,33 @@
+# Dependencies and build output (reinstalled/rebuilt inside the image)
+node_modules
+dist
+coverage
+
+# VCS and CI
+.git
+.github
+.gitignore
+.gitattributes
+
+# Tests and docs (not needed at runtime)
+tests
+docs
+scripts
+*.md
+
+# Secrets and local config — never ship these into an image
+.env
+.env.*
+!.env.sandbox.template
+certs
+*.pem
+*.key
+*.p12
+*.pfx
+.tokens.json
+
+# Editor / OS noise
+.idea
+.vscode
+.DS_Store
+Thumbs.db
