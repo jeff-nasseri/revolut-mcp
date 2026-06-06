@@ -1,0 +1,64 @@
+# =============================================================================
+# Deploy the docs/ folder to GitHub Pages.
+#
+# This is the versioned, file-based equivalent of GitHub's built-in
+# "pages-build-deployment" (the implicit Jekyll workflow you get from
+# Settings → Pages → "Deploy from a branch"). It builds docs/ with the same
+# GitHub Pages Jekyll toolchain (so relative .md links are rewritten to the
+# rendered pages) and deploys via the GitHub Pages Actions.
+#
+# Requirement: repository Settings → Pages → Source must be "GitHub Actions".
+# Published at: https://jeff-nasseri.github.io/revolut-mcp/
+# =============================================================================
+name: Deploy Docs to GitHub Pages
+
+on:
+  push:
+    branches: ["master"]
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# Grant GITHUB_TOKEN the permissions required to deploy to Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress run.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (Jekyll)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build docs with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./docs
+          destination: ./_site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
