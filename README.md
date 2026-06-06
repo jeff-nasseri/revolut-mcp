@@ -18,8 +18,12 @@
 Revolut MCP is a [Model Context Protocol](https://modelcontextprotocol.io) server that bridges AI
 assistants (Claude, Cursor, etc.) and the **Revolut Business API**. Through natural-language requests
 an assistant can list accounts and balances, browse transactions, manage counterparties, look up live
-exchange rates, move money, and more — across 21 tools organized into eight scopes. It targets the
-Revolut Business **sandbox** by default.
+exchange rates, move money, and more — across 21 tools organized into eight scopes.
+
+> ⚠️ **Revolut Business only.** This server works exclusively with **Revolut Business** accounts via the
+> Business API. It does **not** support personal Revolut accounts (Open Banking), RevolutX / crypto, or
+> the Merchant API. It defaults to the **sandbox**; set `REVOLUT_ENVIRONMENT=production` with a
+> production certificate to target a live business account.
 
 ## Demo
 
