@@ -27,8 +27,7 @@ exchange rates, move money, and more — across 21 tools organized into eight sc
 
 ## Demo
 
-> 📹 _Video walkthrough coming soon._
-<!-- Add the recorded walkthrough link here, e.g. https://github.com/user-attachments/assets/XXXXXXXX -->
+https://github.com/user-attachments/assets/afb73925-9628-4473-b4c8-5527440357da
 
 ## Documentation
 
