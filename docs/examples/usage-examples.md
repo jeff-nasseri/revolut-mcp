@@ -135,6 +135,79 @@ Cancel that scheduled transfer I set up earlier.
 
 > Some destinations/currencies require a valid **transfer reason** — ask for the reasons (as above) if a payment is rejected for a missing reason.
 
+### Worked example — pay a new international supplier at an IBAN
+
+A realistic, multi-step flow: add a German supplier using their full international bank
+details, check the FX, then pay an invoice in EUR funded from your GBP balance.
+
+1. **Check the rate** so you know the cost up front (read-only):
+
+   ```
+   What's Revolut's live rate for 2,000 EUR funded from GBP right now, including the fee?
+   ```
+
+2. **Add the supplier as a counterparty** with their IBAN + BIC:
+
+   ```
+   Add a new counterparty for a German company called "Müller Logistik GmbH":
+   currency EUR, bank country DE, IBAN DE89370400440532013000, BIC COBADEFFXXX.
+   ```
+
+   The assistant calls `create_counterparty` with `company_name`, `bank_country=DE`,
+   `currency=EUR`, `iban`, and `bic`, and returns the new counterparty's ID.
+
+3. **Get a valid transfer reason** if the destination requires one:
+
+   ```
+   What transfer reason codes are valid for paying a supplier in DE in EUR?
+   ```
+
+4. **Send the payment**, referencing the invoice:
+
+   ```
+   Pay 2,000 EUR to "Müller Logistik GmbH" from my EUR account,
+   reference "Invoice INV-2026-0884", and show me the payment status.
+   ```
+
+   The assistant calls `create_payment` with the source `account_id`, the counterparty
+   (`counterparty_id`, plus `counterparty_account_id` when the payee has more than one
+   account), `amount=2000`, `currency=EUR`, and your `reference`, then reports the
+   payment `id` and `state`.
+
+If your EUR account is short, exchange first (this moves money between **your own**
+accounts), then pay — in one prompt:
+
+```
+Exchange 2,100 GBP into EUR in my EUR account, then pay 2,000 EUR to
+"Müller Logistik GmbH", reference "Invoice INV-2026-0884".
+```
+
+For a **UK domestic** payee, use local details instead of an IBAN:
+
+```
+Add a counterparty for contractor Jane Smith: GBP, bank country GB,
+account number 12345678, sort code 04-00-04. Then pay her 500 GBP from my
+main account, reference "Consulting — May".
+```
+
+### Beneficiary details you can provide
+
+When adding a counterparty (payee), the server accepts any of these identifier sets:
+
+| Payee type | Fields |
+|---|---|
+| **International (SEPA/SWIFT)** | `iban`, `bic`, `company_name` *or* `individual_first_name` + `individual_last_name`, `bank_country`, `currency` |
+| **Local (UK)** | `account_no`, `sort_code`, name, `bank_country=GB`, `currency=GBP` |
+| **Local (US)** | `account_no`, `routing_number`, name, `bank_country=US`, `currency=USD` |
+| **Revolut user** | `revtag`, `profile_type` (`personal` / `business`) |
+
+> 💳 **Cards are not supported.** This server targets the Revolut **Business — Manage
+> Accounts** API: it sends money to **bank accounts** (IBAN/SWIFT or local account +
+> sort/routing code) and to **Revolut counterparties**. It does **not** send to a card
+> number, nor expose card details or card issuing — there are no card tools here (the
+> Business sandbox has no Cards API). To pay someone, use their bank/IBAN details or
+> Revtag as shown above.
+
 ---
 
 ## Foreign exchange
