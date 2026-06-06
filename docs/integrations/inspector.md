@@ -31,7 +31,7 @@ export REVOLUT_REDIRECT_URI=https://example.com/
 export TOKEN_STORE_PATH=./.tokens.json
 export REVOLUT_ENVIRONMENT=sandbox
 
-npx @modelcontextprotocol/inspector npx @jeffnasseri/revolut-mcp
+npx @modelcontextprotocol/inspector npx @jeff-nasseri/revolut-mcp
 ```
 
 The Inspector prints a local URL (it opens a small web UI). Open it in your browser.

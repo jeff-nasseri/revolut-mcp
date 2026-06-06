@@ -39,14 +39,14 @@ Use this if you installed [from source](../getting-started/installation.md#b-fro
 
 ## Option B — run from npm with `npx`
 
-Use this to run the published package without a local build. Claude Desktop will fetch and start `@jeffnasseri/revolut-mcp` on demand.
+Use this to run the published package without a local build. Claude Desktop will fetch and start `@jeff-nasseri/revolut-mcp` on demand.
 
 ```json
 {
   "mcpServers": {
     "revolut": {
       "command": "npx",
-      "args": ["-y", "@jeffnasseri/revolut-mcp"],
+      "args": ["-y", "@jeff-nasseri/revolut-mcp"],
       "env": {
         "REVOLUT_CLIENT_ID": "your_client_id",
         "REVOLUT_PRIVATE_KEY_PATH": "/absolute/path/to/certs/privatekey.pem",

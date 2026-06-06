@@ -28,14 +28,14 @@ Pick **one** of the following.
 Install the package globally and run the bundled `revolut-mcp` binary:
 
 ```bash
-npm install -g @jeffnasseri/revolut-mcp
+npm install -g @jeff-nasseri/revolut-mcp
 revolut-mcp
 ```
 
 Or run it on demand without a global install (handy in MCP client configs):
 
 ```bash
-npx @jeffnasseri/revolut-mcp
+npx @jeff-nasseri/revolut-mcp
 ```
 
 Both expose the same stdio MCP server. Set the configuration environment variables (see [Configuration](#configuration)) before launching, or let your MCP client inject them via its `env` block.

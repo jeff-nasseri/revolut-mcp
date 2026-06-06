@@ -6,6 +6,7 @@ Complete documentation for **revolut-mcp** — a Model Context Protocol server f
 ## Getting Started
 
 - **[Installation](getting-started/installation.md)** — install from npm, source, or Docker
+- **[Generate a Sandbox Token](getting-started/sandbox-token.md)** — set up the Revolut Business sandbox and obtain a token
 - **[Authentication](getting-started/authentication.md)** — generate your certificate and complete the OAuth flow
 - **[Testing](getting-started/testing.md)** — run the unit and live integration tests
 
