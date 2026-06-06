@@ -1,7 +1,8 @@
 {
-  "name": "@jeffnasseri/revolut-mcp",
+  "name": "@jeff-nasseri/revolut-mcp",
   "version": "0.0.0",
   "description": "MCP server for the Revolut Business API — accounts, transactions, counterparties, payments, transfers, FX, and team, over a scope-based tool architecture.",
+  "mcpName": "io.github.jeff-nasseri/revolut-mcp",
   "main": "dist/index.js",
   "bin": {
     "revolut-mcp": "dist/index.js"
